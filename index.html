@@ -147,7 +147,6 @@ button:focus-visible,a:focus-visible{outline:3px solid var(--amber);outline-offs
       <svg viewBox="0 0 120 120"><circle class="bg" cx="60" cy="60" r="52"/><circle class="fg" id="ring" cx="60" cy="60" r="52"/></svg>
       <div class="num"><span id="num">30</span><small id="unit">seconds</small></div>
     </div>
-    <button class="done-btn" id="setdone" hidden>Set done</button>
     <h3 class="exname" id="exname"></h3>
     <div class="where" id="where"></div>
     <div class="pips" id="pips"></div>
@@ -212,12 +211,13 @@ function renderHome(){
 }
 
 /* ---- steps ---- */
+const PACE=4; /* seconds per rep for rep-based exercises */
 function buildSteps(){
   const s=[];
   EX.forEach((e,i)=>{
     s.push(i===0?{k:"ready",secs:10,ex:i}:{k:"break",secs:30,ex:i});
     for(let set=0;set<e.sets;set++){
-      if(e.type==="reps"){s.push({k:"set",ex:i,set});if(set<e.sets-1)s.push({k:"rest",secs:10,ex:i,set:set+1,rep:0})}
+      if(e.type==="reps"){s.push({k:"set",ex:i,set,secs:e.reps*PACE});if(set<e.sets-1)s.push({k:"rest",secs:10,ex:i,set:set+1,rep:0})}
       else for(let r=0;r<e.reps;r++){
         s.push({k:"work",secs:e.secs,ex:i,set,rep:r});
         const last=set===e.sets-1&&r===e.reps-1;
@@ -251,21 +251,21 @@ function show(i){
   pips(st);
   $("pimg").src=IMGS[st.ex];$("pimg").alt=e.name+" demonstration photos";
   $("cues").innerHTML=`<div class="setup">${e.setup}</div><ul>${e.cues.map(c=>`<li>${c}</li>`).join("")}</ul>${e.note?`<div class="pn">${e.note}</div>`:""}`;
-  const manual=st.k==="set";
-  $("setdone").hidden=!manual;$("dial").hidden=manual;
-  if(manual){setStart=Date.now();remain=0;$("pause").disabled=true}
-  else{$("pause").disabled=false;remain=st.secs*1000;endAt=Date.now()+remain;draw(remain,st.secs)}
+  remain=st.secs*1000;endAt=Date.now()+remain;draw(remain,st);
   paused=false;$("pause").textContent="Pause";
-  if(st.k==="work")beep(1200,.18);
+  if(st.k==="work"||st.k==="set")beep(1200,.18);
 }
-function draw(ms,total){const s=Math.ceil(ms/1000);$("num").textContent=Math.max(0,s);$("unit").textContent="seconds";
-  $("ring").style.strokeDashoffset=C*(1-Math.max(0,ms)/(total*1000));return s}
+function draw(ms,st){const total=st.secs,s=Math.ceil(ms/1000);
+  if(st.k==="set"){const e=EX[st.ex],rep=Math.min(e.reps,Math.floor((total*1000-Math.max(0,ms))/(PACE*1000))+1);
+    $("num").textContent=rep;$("unit").textContent=`of ${e.reps} reps`}
+  else{$("num").textContent=Math.max(0,s);$("unit").textContent="seconds"}
+  $("ring").style.strokeDashoffset=C*(1-Math.max(0,ms)/(total*1000));return st.k==="set"?$("num").textContent:s}
 function tick(){
-  const st=steps[idx];if(!st||st.k==="set"||paused)return;
-  const ms=endAt-Date.now();const s=draw(ms,st.secs);
-  if(s!==lastSec){if(s<=3&&s>0)beep(660,.1);lastSec=s}
-  if(ms<=0){beep(1320,.35);buzz(st.k==="work"?[200,80,200]:300);
-    if(st.k==="work")repsDone++;next()}
+  const st=steps[idx];if(!st||paused)return;
+  const ms=endAt-Date.now();const s=draw(ms,st);
+  if(s!==lastSec){if(st.k==="set"){if(lastSec!==null)beep(990,.07)}else if(s<=3&&s>0)beep(660,.1);lastSec=s}
+  if(ms<=0){beep(1320,.35);buzz(st.k==="rest"||st.k==="break"||st.k==="ready"?300:[200,80,200]);
+    if(st.k==="work")repsDone++;if(st.k==="set")repsDone+=EX[st.ex].reps;next()}
 }
 function next(){if(idx<steps.length-1)show(idx+1);else finish()}
 
@@ -290,8 +290,7 @@ function finish(){
   $("session").hidden=true;$("finish").hidden=false;buzz([200,100,200,100,400]);
 }
 $("go").onclick=start;
-$("setdone").onclick=()=>{repsDone+=EX[steps[idx].ex].reps;beep(1320,.2);buzz(150);next()};
-$("skip").onclick=next;
+$("skip").onclick=()=>{const st=steps[idx];if(st&&st.k==="set")repsDone+=EX[st.ex].reps;next()};
 $("back").onclick=()=>show(Math.max(0,idx-1));
 $("pause").onclick=()=>{if(paused){endAt=Date.now()+remain;paused=false;$("pause").textContent="Pause"}else{remain=endAt-Date.now();paused=true;$("pause").textContent="Resume"}};
 $("snd").onclick=()=>{sound=!sound;$("snd").textContent=sound?"Sound":"Muted"};
